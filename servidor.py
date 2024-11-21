@@ -21,52 +21,54 @@ def send_active_users(sock=None):  # Envia a lista de usuários ativos para todo
         broadcast(msg)
 
 # Gerencia a interação com um cliente específico
-def handle_client(sock, addr):  # Sock é associado ao cliente e Address ao IP e Porta
+def handle_client(sock, addr):
     try:
         # Solicita nome único
         while True:
-            name = sock.recv(1024).decode("utf-8")  # Aguarda e converte o nome
+            name = sock.recv(1024).decode("utf-8")
+            if not name:  # Verifica se o cliente fechou a conexão
+                break
             if name in names:
                 sock.send("NOME_EM_USO\n".encode("utf-8"))
             else:
                 sock.send("OK\n".encode("utf-8"))
                 break
 
-        clients[addr] = sock  # Armazena o socket do cliente no dicionario clients com o addres como chave
-        names[name] = addr  # Armazena o address do cliente com nome como chave
+        clients[addr] = sock # Armazena o socket do cliente no dicionario clients com o addres como chave
+        names[name] = addr # Armazena o address do cliente com nome como chave
         broadcast(f"{name} entrou no chat de {addr[0]}:{addr[1]}")
         send_active_users()
-
         # Loop para lidar com mensagens do cliente
         while True:
-            msg = (sock.recv(1024).decode("utf-8").strip())  # Aguarda, converte e remove os espaços da mensagem
-
-            if msg.startswith("@"): # Verifica se a msg é privada
+            msg = sock.recv(1024).decode("utf-8").strip()
+            if not msg:  # Se não houver mensagem, o cliente desconectou
+                break
+            if msg.startswith("@"):
                 try:
                     target_name, private_msg = msg[1:].split(" ", 1)  # Divisão na mensagem (remove o @ inicial e fica: "destinatario: mensagem")
                     if target_name == name:
-                        sock.send(
-                            "Você não pode enviar mensagens privadas para si mesmo.\n".encode("utf-8"))
-                    elif (target_name in names):  # Verifica se o destinatário está conectado
-                        target_sock = clients[names[target_name]]  # Obtém o socket do destinatário a partir de names e clients
+                        sock.send("Você não pode enviar mensagens privadas para si mesmo.\n".encode("utf-8"))
+                    elif target_name in names:
+                        target_sock = clients[names[target_name]]
                         target_sock.send(f"{name}: {private_msg} (privado)\n".encode("utf-8"))
                     else:
                         sock.send(f"Usuário {target_name} não encontrado.\n".encode("utf-8"))
                 except ValueError:
                     sock.send("Formato inválido. Use @nome mensagem.\n".encode("utf-8"))
-            else:  # Mensagem pública
-                broadcast(f"{name}: {msg}", exclude=sock)  # Envia para todos, exceto o remetente
-    except:
-        pass
+            else:
+                broadcast(f"{name}: {msg}", exclude=sock)
+
+    except (OSError, ConnectionResetError) as e:
+        print(f"Erro com o cliente {name}: {e}")
     finally:
-        # Remove o cliente ao desconectar
+        # Remover cliente desconectado
         if addr in clients:
             del clients[addr]
         if name in names:
             del names[name]
         broadcast(f"{name} saiu do chat.")
         send_active_users()
-        sock.close()  # Fecha o socket do cliente
+        sock.close() #Fecha o socket do cliente
 
 def start_server():
     global server_running
